@@ -7,6 +7,8 @@ import {
   TrendingUp, LogOut, User, Plus, Search, Sparkles, Mail, Lock, FileVideo,
   Zap, Trash2, Copy, Bell, GripVertical, Eye, EyeOff, ArrowUpRight, Folder,
 } from "lucide-react";
+import { supabase } from "./lib/supabaseClient.js";
+import { apiGet, apiPost, apiPatch, uploadVideo } from "./lib/api.js";
 
 /* ----------------------------- design tokens ----------------------------- */
 const C = {
@@ -481,7 +483,33 @@ const Landing = ({ go, push }) => {
 /* ----------------------------- Auth ----------------------------- */
 const AuthScreen = ({ mode, go, onAuth }) => {
   const [showPw, setShowPw] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
   const isUp = mode === "auth-up";
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setError("");
+    if (!supabase) {
+      setError("Supabase isn't configured yet — add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to frontend/.env.");
+      return;
+    }
+    setLoading(true);
+    try {
+      const { data, error: authError } = isUp
+        ? await supabase.auth.signUp({ email, password })
+        : await supabase.auth.signInWithPassword({ email, password });
+      if (authError) throw authError;
+      await onAuth(data);
+    } catch (err) {
+      setError(err.message || "Something went wrong. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen flex items-center justify-center px-6" style={{ background: C.bg }}>
       <div className="w-full max-w-sm clippio-rise">
@@ -490,12 +518,12 @@ const AuthScreen = ({ mode, go, onAuth }) => {
         <p className="text-sm mb-8" style={{ color: C.textMuted, ...bodyFont }}>
           {isUp ? "Start turning long videos into shorts, free." : "Sign in to continue to your dashboard."}
         </p>
-        <form onSubmit={(e) => { e.preventDefault(); onAuth(); }} className="flex flex-col gap-4">
+        <form onSubmit={submit} className="flex flex-col gap-4">
           <div>
             <label className="text-xs font-medium mb-1.5 block" style={{ color: C.textMuted, ...bodyFont }}>Email</label>
             <div className="flex items-center gap-2 px-3.5 rounded-lg" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
               <Mail size={15} color={C.textFaint} />
-              <input required type="email" placeholder="you@studio.com" className="bg-transparent outline-none py-2.5 text-sm w-full" style={{ color: C.text, ...bodyFont }} />
+              <input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@studio.com" className="bg-transparent outline-none py-2.5 text-sm w-full" style={{ color: C.text, ...bodyFont }} />
             </div>
           </div>
           <div>
@@ -505,11 +533,14 @@ const AuthScreen = ({ mode, go, onAuth }) => {
             </div>
             <div className="flex items-center gap-2 px-3.5 rounded-lg" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
               <Lock size={15} color={C.textFaint} />
-              <input required type={showPw ? "text" : "password"} placeholder="••••••••" className="bg-transparent outline-none py-2.5 text-sm w-full" style={{ color: C.text, ...bodyFont }} />
+              <input required minLength={6} type={showPw ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" className="bg-transparent outline-none py-2.5 text-sm w-full" style={{ color: C.text, ...bodyFont }} />
               <button type="button" onClick={() => setShowPw(!showPw)}>{showPw ? <EyeOff size={15} color={C.textFaint} /> : <Eye size={15} color={C.textFaint} />}</button>
             </div>
           </div>
-          <Button size="lg" className="w-full mt-2" type="submit">{isUp ? "Create Account" : "Sign In"}</Button>
+          {error && <p className="text-xs" style={{ color: C.danger, ...bodyFont }}>{error}</p>}
+          <Button size="lg" className="w-full mt-2" type="submit" disabled={loading}>
+            {loading ? "Please wait…" : isUp ? "Create Account" : "Sign In"}
+          </Button>
         </form>
         <p className="text-sm text-center mt-6" style={{ color: C.textFaint, ...bodyFont }}>
           {isUp ? "Already have an account? " : "Don't have an account? "}
@@ -531,7 +562,7 @@ const SIDEBAR_ITEMS = [
   { id: "settings", label: "Settings", icon: Settings },
 ];
 
-const Sidebar = ({ active, setActive, go, mobileOpen, setMobileOpen }) => (
+const Sidebar = ({ active, setActive, go, onLogout, profile, mobileOpen, setMobileOpen }) => (
   <>
     {mobileOpen && <div className="fixed inset-0 bg-black/60 z-40 lg:hidden" onClick={() => setMobileOpen(false)} />}
     <div
@@ -560,13 +591,15 @@ const Sidebar = ({ active, setActive, go, mobileOpen, setMobileOpen }) => (
       <div className="p-4 flex-shrink-0" style={{ borderTop: `1px solid ${C.border}` }}>
         <div className="flex items-center gap-3 px-2 py-2 rounded-lg cursor-pointer" style={{ ":hover": {} }}>
           <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: C.accentSoft }}>
-            <span style={{ ...displayFont, color: C.accentText, fontSize: 12, fontWeight: 600 }}>JM</span>
+            <span style={{ ...displayFont, color: C.accentText, fontSize: 12, fontWeight: 600 }}>
+              {(profile?.full_name || profile?.email || "?").slice(0, 2).toUpperCase()}
+            </span>
           </div>
           <div className="flex-1 min-w-0">
-            <div className="text-sm truncate" style={{ color: C.text, ...bodyFont }}>Jordan Malik</div>
-            <div className="text-xs" style={{ color: C.textFaint }}>Creator plan</div>
+            <div className="text-sm truncate" style={{ color: C.text, ...bodyFont }}>{profile?.full_name || profile?.email || "Your account"}</div>
+            <div className="text-xs" style={{ color: C.textFaint }}>{profile ? `${profile.plan?.charAt(0).toUpperCase()}${profile.plan?.slice(1)} plan` : "Free plan"}</div>
           </div>
-          <button onClick={() => go("landing")}><LogOut size={15} color={C.textFaint} /></button>
+          <button onClick={onLogout}><LogOut size={15} color={C.textFaint} /></button>
         </div>
       </div>
     </div>
@@ -610,7 +643,7 @@ const ProjectCard = ({ p, onOpen }) => (
   </Card>
 );
 
-const DashboardHome = ({ projects, onUpload, onOpenProject }) => {
+const DashboardHome = ({ projects, loading, onUpload, onOpenProject }) => {
   const inputRef = useRef(null);
   return (
     <div className="p-6 lg:p-10 max-w-5xl">
@@ -619,14 +652,14 @@ const DashboardHome = ({ projects, onUpload, onOpenProject }) => {
 
       <Card className="mt-8 p-8 flex flex-col items-center text-center" style={{ background: C.bgRaised }}
         onDragOver={(e) => { e.preventDefault(); e.currentTarget.style.borderColor = C.accent; }}
-        onDrop={(e) => { e.preventDefault(); onUpload(e.dataTransfer.files?.[0]?.name || "new-upload.mp4"); }}
+        onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) onUpload(f); }}
       >
         <div className="w-14 h-14 rounded-full flex items-center justify-center mb-4" style={{ background: C.accentSoft }}>
           <UploadCloud size={24} color={C.accentText} />
         </div>
         <h3 className="text-lg font-medium" style={{ color: C.text, ...displayFont }}>Upload a video</h3>
         <p className="text-sm mt-1.5 mb-5" style={{ color: C.textMuted, ...bodyFont }}>Drag and drop, or choose a file from your computer.</p>
-        <input ref={inputRef} type="file" accept="video/*" className="hidden" onChange={(e) => e.target.files[0] && onUpload(e.target.files[0].name)} />
+        <input ref={inputRef} type="file" accept="video/*" className="hidden" onChange={(e) => e.target.files[0] && onUpload(e.target.files[0])} />
         <Button icon={Plus} onClick={() => inputRef.current?.click()}>Choose Video</Button>
         <p className="text-xs mt-4" style={{ color: C.textFaint }}>MP4, MOV, AVI, WebM · Max 2GB</p>
       </Card>
@@ -635,7 +668,13 @@ const DashboardHome = ({ projects, onUpload, onOpenProject }) => {
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-medium" style={{ color: C.text, ...bodyFont }}>Recent Projects</h3>
         </div>
-        {projects.length === 0 ? (
+        {loading ? (
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {[0, 1, 2].map((i) => (
+              <Card key={i} className="p-4" style={{ height: 220, opacity: 0.5, animation: "clippio-pulse 1.4s ease-in-out infinite" }} />
+            ))}
+          </div>
+        ) : projects.length === 0 ? (
           <Card className="p-10 text-center">
             <Folder size={22} color={C.textFaint} className="mx-auto mb-3" />
             <p className="text-sm" style={{ color: C.textMuted, ...bodyFont }}>No projects yet. Upload a video to get started.</p>
@@ -721,7 +760,14 @@ const ClipCard = ({ clip, onEdit, push }) => (
       <p className="text-sm font-medium leading-snug flex-1" style={{ color: C.text, ...bodyFont }}>{clip.title}</p>
       <div className="flex gap-2 mt-4">
         <Button size="sm" variant="secondary" className="flex-1" icon={Pencil} onClick={() => onEdit(clip)}>Edit</Button>
-        <Button size="sm" variant="secondary" icon={Download} onClick={() => push(`Downloading "${clip.title.slice(0, 24)}…"`, "success")} />
+        <Button size="sm" variant="secondary" icon={Download} onClick={async () => {
+          try {
+            const res = await apiPost(`/api/clips/${clip.id}/export`, {});
+            push(res.message || `Exporting "${clip.title.slice(0, 24)}…"`, "success");
+          } catch (err) {
+            push(err.message || "Couldn't reach the export endpoint", "accent");
+          }
+        }} />
       </div>
     </div>
   </Card>
@@ -926,8 +972,29 @@ const Editor = ({ clip, onBack, push }) => {
           <ChevronLeft size={13} /> Back to clips
         </button>
         <div className="flex gap-2">
-          <Button variant="secondary" size="sm" onClick={() => push("Changes saved", "success")}>Save Changes</Button>
-          <Button size="sm" icon={Download} onClick={() => push("Exporting clip…", "success")}>Export Clip</Button>
+          <Button variant="secondary" size="sm" onClick={async () => {
+            try {
+              if (clip?.id) {
+                await apiPatch(`/api/clips/${clip.id}`, {
+                  title: state.title,
+                  aspect_ratio: state.ratio,
+                  captions_enabled: state.captionsOn,
+                  caption_style: { font: state.font, fontSize: state.fontSize, position: state.position, animation: state.animation },
+                });
+              }
+              push("Changes saved", "success");
+            } catch (err) {
+              push(err.message || "Couldn't save changes", "accent");
+            }
+          }}>Save Changes</Button>
+          <Button size="sm" icon={Download} onClick={async () => {
+            try {
+              const res = clip?.id ? await apiPost(`/api/clips/${clip.id}/export`, {}) : null;
+              push(res?.message || "Exporting clip…", "success");
+            } catch (err) {
+              push(err.message || "Couldn't reach the export endpoint", "accent");
+            }
+          }}>Export Clip</Button>
         </div>
       </div>
       <div className="flex-1 grid lg:grid-cols-[1fr_340px] overflow-hidden">
@@ -969,31 +1036,58 @@ const Editor = ({ clip, onBack, push }) => {
 };
 
 /* ----------------------------- My Videos / Clips / Templates / Brand Kit / Settings ----------------------------- */
-const MyVideos = ({ projects }) => (
+const MyVideos = ({ projects, loading }) => (
   <div className="p-6 lg:p-10">
     <h1 className="text-2xl font-medium" style={{ ...displayFont, color: C.text }}>My Videos</h1>
     <p className="mt-1.5 text-[15px] mb-8" style={{ color: C.textMuted, ...bodyFont }}>Every source video you've uploaded to Clippio.</p>
-    <div className="flex flex-col gap-2">
-      {projects.map((p) => (
-        <Card key={p.id} hover className="p-4 flex items-center gap-4">
-          <div className="w-16 h-11 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: C.bgRaised }}>
-            <Film size={16} color={C.textFaint} />
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="text-sm font-medium truncate" style={{ color: C.text, ...bodyFont }}>{p.name}</div>
-            <div className="text-xs mt-0.5" style={{ color: C.textFaint }}>{p.niche} · {p.date}</div>
-          </div>
-          <Badge tone="neutral">{p.clips} clips</Badge>
-          <StatusPill status={p.status} />
-        </Card>
-      ))}
-    </div>
+    {loading ? (
+      <p className="text-sm" style={{ color: C.textFaint, ...bodyFont }}>Loading videos…</p>
+    ) : projects.length === 0 ? (
+      <Card className="p-10 text-center">
+        <Film size={22} color={C.textFaint} className="mx-auto mb-3" />
+        <p className="text-sm" style={{ color: C.textMuted, ...bodyFont }}>No videos yet — upload one from the dashboard.</p>
+      </Card>
+    ) : (
+      <div className="flex flex-col gap-2">
+        {projects.map((p) => (
+          <Card key={p.id} hover className="p-4 flex items-center gap-4">
+            <div className="w-16 h-11 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: C.bgRaised }}>
+              <Film size={16} color={C.textFaint} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium truncate" style={{ color: C.text, ...bodyFont }}>{p.name}</div>
+              <div className="text-xs mt-0.5" style={{ color: C.textFaint }}>{p.niche || "Video"} · {p.date || (p.created_at ? new Date(p.created_at).toLocaleDateString() : "")}</div>
+            </div>
+            <Badge tone="neutral">{p.clips?.length ?? p.clips ?? 0} clips</Badge>
+            <StatusPill status={p.status === "ready" ? "Ready" : p.status === "processing" ? "Processing" : p.status || "Ready"} />
+          </Card>
+        ))}
+      </div>
+    )}
   </div>
 );
 
-const ClipsLibrary = ({ allClips, onEdit, push }) => {
+const ClipsLibrary = ({ onEdit, push }) => {
   const [q, setQ] = useState("");
-  const filtered = allClips.filter((c) => c.title.toLowerCase().includes(q.toLowerCase()));
+  const [clips, setClips] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { clips: data } = await apiGet("/api/clips");
+        if (!cancelled) setClips(data || []);
+      } catch (err) {
+        if (!cancelled) push(err.message || "Couldn't load clips from the backend", "accent");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const filtered = clips.filter((c) => c.title.toLowerCase().includes(q.toLowerCase()));
   return (
     <div className="p-6 lg:p-10">
       <h1 className="text-2xl font-medium" style={{ ...displayFont, color: C.text }}>Clips</h1>
@@ -1002,9 +1096,18 @@ const ClipsLibrary = ({ allClips, onEdit, push }) => {
         <Search size={14} color={C.textFaint} />
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search clips…" className="bg-transparent outline-none py-2.5 text-sm w-full" style={{ color: C.text, ...bodyFont }} />
       </div>
-      <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {filtered.map((c) => <ClipCard key={c.id} clip={c} onEdit={onEdit} push={push} />)}
-      </div>
+      {loading ? (
+        <p className="text-sm" style={{ color: C.textFaint, ...bodyFont }}>Loading clips…</p>
+      ) : filtered.length === 0 ? (
+        <Card className="p-10 text-center">
+          <Clapperboard size={22} color={C.textFaint} className="mx-auto mb-3" />
+          <p className="text-sm" style={{ color: C.textMuted, ...bodyFont }}>No clips yet — upload a video from the dashboard to generate some.</p>
+        </Card>
+      ) : (
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {filtered.map((c) => <ClipCard key={c.id} clip={{ ...c, duration: c.duration || `0:${String(Math.round(c.end_seconds - c.start_seconds)).padStart(2, "0")}`, hue: c.hue || C.accent }} onEdit={onEdit} push={push} />)}
+        </div>
+      )}
     </div>
   );
 };
@@ -1116,9 +1219,11 @@ const AnalyticsPage = () => {
   );
 };
 
-const SettingsPage = ({ push }) => {
-  const [name, setName] = useState("Jordan Malik");
-  const [email, setEmail] = useState("jordan@studio.com");
+const SettingsPage = ({ push, profile }) => {
+  const [name, setName] = useState(profile?.full_name || "");
+  const [email, setEmail] = useState(profile?.email || "");
+  const planLabel = profile?.plan ? `${profile.plan.charAt(0).toUpperCase()}${profile.plan.slice(1)} plan` : "Free plan";
+  const planDesc = { free: "3 videos/month · Watermark", creator: "30 videos/month · No watermark", pro: "100 videos/month · Everything in Creator" };
   return (
     <div className="p-6 lg:p-10 max-w-xl">
       <h1 className="text-2xl font-medium" style={{ ...displayFont, color: C.text }}>Settings</h1>
@@ -1126,18 +1231,18 @@ const SettingsPage = ({ push }) => {
       <Card className="p-6 flex flex-col gap-4 mb-6">
         <div>
           <label className="text-xs font-medium mb-1.5 block" style={{ color: C.textMuted }}>Name</label>
-          <input value={name} onChange={(e) => setName(e.target.value)} className="w-full px-3.5 py-2.5 rounded-lg text-sm outline-none" style={{ background: C.bgRaised, border: `1px solid ${C.border}`, color: C.text, ...bodyFont }} />
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name" className="w-full px-3.5 py-2.5 rounded-lg text-sm outline-none" style={{ background: C.bgRaised, border: `1px solid ${C.border}`, color: C.text, ...bodyFont }} />
         </div>
         <div>
           <label className="text-xs font-medium mb-1.5 block" style={{ color: C.textMuted }}>Email</label>
-          <input value={email} onChange={(e) => setEmail(e.target.value)} className="w-full px-3.5 py-2.5 rounded-lg text-sm outline-none" style={{ background: C.bgRaised, border: `1px solid ${C.border}`, color: C.text, ...bodyFont }} />
+          <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@studio.com" className="w-full px-3.5 py-2.5 rounded-lg text-sm outline-none" style={{ background: C.bgRaised, border: `1px solid ${C.border}`, color: C.text, ...bodyFont }} />
         </div>
         <Button className="self-start mt-2" onClick={() => push("Account updated", "success")}>Save Changes</Button>
       </Card>
       <Card className="p-6 flex items-center justify-between">
         <div>
-          <div className="text-sm font-medium" style={{ color: C.text, ...bodyFont }}>Creator plan</div>
-          <div className="text-xs mt-1" style={{ color: C.textFaint }}>30 videos/month · No watermark</div>
+          <div className="text-sm font-medium" style={{ color: C.text, ...bodyFont }}>{planLabel}</div>
+          <div className="text-xs mt-1" style={{ color: C.textFaint }}>{planDesc[profile?.plan] || planDesc.free}</div>
         </div>
         <Button variant="secondary" size="sm">Manage Plan</Button>
       </Card>
@@ -1150,8 +1255,11 @@ export default function ClippioApp() {
   const [view, setView] = useState("landing");
   const [sidebarActive, setSidebarActive] = useState("dashboard");
   const [mobileSidebar, setMobileSidebar] = useState(false);
-  const [projects, setProjects] = useState(INITIAL_PROJECTS);
+  const [projects, setProjects] = useState([]);
+  const [projectsLoading, setProjectsLoading] = useState(false);
+  const [profile, setProfile] = useState(null);
   const [uploadFileName, setUploadFileName] = useState("");
+  const [activeProjectId, setActiveProjectId] = useState(null);
   const [resultClips, setResultClips] = useState([]);
   const [editingClip, setEditingClip] = useState(null);
   const [flow, setFlow] = useState("dashboard"); // dashboard | processing | results | editor
@@ -1159,30 +1267,115 @@ export default function ClippioApp() {
 
   const go = (v) => { setView(v); window.scrollTo(0, 0); };
 
-  const handleAuth = () => { setView("app"); setFlow("dashboard"); setSidebarActive("dashboard"); push("Signed in successfully"); };
+  const refreshProjects = useCallback(async () => {
+    setProjectsLoading(true);
+    try {
+      const { projects: data } = await apiGet("/api/projects");
+      setProjects(data || []);
+    } catch (err) {
+      push(err.message || "Couldn't reach the Clippio API — is the backend running?", "accent");
+      setProjects([]);
+    } finally {
+      setProjectsLoading(false);
+    }
+  }, [push]);
 
-  const handleUpload = (fileName) => {
-    setUploadFileName(fileName);
+  // Restore an existing Supabase session on load (e.g. page refresh).
+  useEffect(() => {
+    if (!supabase) return;
+    supabase.auth.getSession().then(({ data }) => {
+      if (data?.session) enterApp();
+    });
+  }, []);
+
+  const enterApp = async () => {
+    try {
+      await apiPost("/api/auth/bootstrap-profile", {});
+      const { profile: p } = await apiGet("/api/auth/me");
+      setProfile(p);
+    } catch (err) {
+      push(err.message || "Signed in, but couldn't load your profile from the API", "accent");
+    }
+    setView("app");
+    setFlow("dashboard");
+    setSidebarActive("dashboard");
+    refreshProjects();
+  };
+
+  const handleAuth = async ({ session }) => {
+    if (!session) {
+      push("Check your email to confirm your account, then sign in.", "accent");
+      go("auth-in");
+      return;
+    }
+    await enterApp();
+    push("Signed in successfully");
+  };
+
+  const handleLogout = async () => {
+    if (supabase) await supabase.auth.signOut();
+    setProfile(null);
+    setProjects([]);
+    go("landing");
+  };
+
+  const handleUpload = async (file) => {
+    if (!file) return;
+    setUploadFileName(file.name);
     setFlow("processing");
+    try {
+      const { project } = await uploadVideo(file);
+      setActiveProjectId(project.id);
+    } catch (err) {
+      push(err.message || "Upload failed", "accent");
+      setFlow("dashboard");
+    }
   };
 
-  const handleProcessingDone = () => {
-    const clips = makeClips(uploadFileName);
-    setResultClips(clips);
-    setProjects((p) => [{ id: `p${p.length + 1}`, name: uploadFileName.replace(/\.[^/.]+$/, ""), clips: clips.length, date: "Just now", status: "Ready", niche: "New" }, ...p]);
-    setFlow("results");
-    push(`${clips.length} clips generated`, "success");
+  // Called once the processing screen's stage animation finishes. The mock
+  // backend pipeline runs almost instantly, but we poll a few times in case
+  // it (or a real, slower pipeline later) hasn't finished quite yet.
+  const handleProcessingDone = async () => {
+    if (!activeProjectId) { setFlow("dashboard"); return; }
+    for (let attempt = 0; attempt < 6; attempt++) {
+      try {
+        const { project } = await apiGet(`/api/projects/${activeProjectId}`);
+        if (project.status === "ready") {
+          setResultClips(project.clips || []);
+          refreshProjects();
+          setFlow("results");
+          push(`${(project.clips || []).length} clips generated`, "success");
+          return;
+        }
+        if (project.status === "failed") {
+          push("Processing failed for this video", "accent");
+          setFlow("dashboard");
+          return;
+        }
+      } catch (err) {
+        push(err.message || "Couldn't check processing status", "accent");
+        setFlow("dashboard");
+        return;
+      }
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+    push("Still processing — check My Videos shortly", "accent");
+    setFlow("dashboard");
+    refreshProjects();
   };
 
-  const handleOpenProject = (project) => {
+  const handleOpenProject = async (project) => {
     setUploadFileName(project.name);
-    setResultClips(makeClips(project.id));
-    setFlow("results");
+    try {
+      const { project: full } = await apiGet(`/api/projects/${project.id}`);
+      setResultClips(full.clips || []);
+      setFlow("results");
+    } catch (err) {
+      push(err.message || "Couldn't load this project", "accent");
+    }
   };
 
   const handleEditClip = (clip) => { setEditingClip(clip); setFlow("editor"); };
-
-  const allClipsAcrossProjects = projects.slice(0, 5).flatMap((p) => makeClips(p.id).slice(0, 2));
 
   const sidebarTitles = {
     dashboard: ["Dashboard", null], myvideos: ["My Videos", null], clips: ["Clips", null],
@@ -1196,7 +1389,15 @@ export default function ClippioApp() {
       {(view === "auth-in" || view === "auth-up") && <AuthScreen mode={view} go={go} onAuth={handleAuth} />}
       {view === "app" && (
         <div className="flex" style={{ minHeight: "100vh" }}>
-          <Sidebar active={sidebarActive} setActive={(id) => { setSidebarActive(id); setFlow("dashboard"); }} go={go} mobileOpen={mobileSidebar} setMobileOpen={setMobileSidebar} />
+          <Sidebar
+            active={sidebarActive}
+            setActive={(id) => { setSidebarActive(id); setFlow("dashboard"); }}
+            go={go}
+            onLogout={handleLogout}
+            profile={profile}
+            mobileOpen={mobileSidebar}
+            setMobileOpen={setMobileSidebar}
+          />
           <div className="flex-1 min-w-0 flex flex-col">
             {flow !== "editor" && (
               <TopBar title={sidebarTitles[sidebarActive]?.[0] || "Dashboard"} onMenu={() => setMobileSidebar(true)} />
@@ -1208,14 +1409,14 @@ export default function ClippioApp() {
               )}
               {flow === "editor" && <Editor clip={editingClip} onBack={() => setFlow("results")} push={push} />}
               {flow === "dashboard" && sidebarActive === "dashboard" && (
-                <DashboardHome projects={projects} onUpload={handleUpload} onOpenProject={handleOpenProject} />
+                <DashboardHome projects={projects} loading={projectsLoading} onUpload={handleUpload} onOpenProject={handleOpenProject} />
               )}
-              {flow === "dashboard" && sidebarActive === "myvideos" && <MyVideos projects={projects} />}
-              {flow === "dashboard" && sidebarActive === "clips" && <ClipsLibrary allClips={allClipsAcrossProjects} onEdit={handleEditClip} push={push} />}
+              {flow === "dashboard" && sidebarActive === "myvideos" && <MyVideos projects={projects} loading={projectsLoading} />}
+              {flow === "dashboard" && sidebarActive === "clips" && <ClipsLibrary onEdit={handleEditClip} push={push} />}
               {flow === "dashboard" && sidebarActive === "templates" && <Templates push={push} />}
               {flow === "dashboard" && sidebarActive === "brandkit" && <BrandKit push={push} />}
               {flow === "dashboard" && sidebarActive === "analytics" && <AnalyticsPage />}
-              {flow === "dashboard" && sidebarActive === "settings" && <SettingsPage push={push} />}
+              {flow === "dashboard" && sidebarActive === "settings" && <SettingsPage push={push} profile={profile} />}
             </div>
           </div>
         </div>

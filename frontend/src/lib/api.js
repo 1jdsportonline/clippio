@@ -24,6 +24,16 @@ export async function apiPost(path, body) {
   return res.json();
 }
 
+export async function apiPatch(path, body) {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error((await res.json()).error || res.statusText);
+  return res.json();
+}
+
 export async function uploadVideo(file) {
   const form = new FormData();
   form.append("video", file);
