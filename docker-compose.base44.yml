@@ -1,0 +1,59 @@
+# Base44 dev environment for Clippio.
+# Dev-oriented: source is bind-mounted and run via live-reload dev servers,
+# so edits appear without rebuilding images.
+#
+# The frontend (React + Vite) runs fully on mock data and is the web entry
+# point shown in the preview (host port 3000). The backend (Express) boots
+# without external keys (routes return 503 until Supabase/Stripe are configured)
+# and is exposed on host port 8000 for future wiring / Stripe webhooks.
+#
+# External secrets (Supabase, Stripe) are delivered by the platform to
+# /run/base44/app.env and loaded as the LAST env_file entry so they always win.
+
+services:
+  frontend:
+    image: node:22
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules        # keep container-installed deps, don't shadow with host
+    command: sh -c "npm install --no-audit --no-fund && npm run dev"
+    ports:
+      - "3000:5173"
+    environment:
+      # Frontend currently runs on mock data; this URL is for future backend wiring.
+      - VITE_API_URL=https://8000-${BASE44_PUBLIC_HOST_SUFFIX}
+      - VITE_SUPABASE_URL=${VITE_SUPABASE_URL:-}
+      - VITE_SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY:-}
+    env_file:
+      - ./.env.base44-defaults   # placeholders — app boots without credentials
+      - /run/base44/app.env       # platform secrets — LAST, always wins
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:5173/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 20s
+
+  backend:
+    image: node:22
+    working_dir: /app
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    command: sh -c "npm install --no-audit --no-fund && npm run dev"
+    ports:
+      - "8000:4000"
+    environment:
+      - PORT=4000
+      - CLIENT_URL=https://3000-${BASE44_PUBLIC_HOST_SUFFIX}
+      - VIDEO_STORAGE_BUCKET=${VIDEO_STORAGE_BUCKET:-clippio-uploads}
+    env_file:
+      - ./.env.base44-defaults
+      - /run/base44/app.env
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 15s

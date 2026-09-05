@@ -1,0 +1,18 @@
+{
+  "previewPort": 3000,
+  "healthPath": "/",
+  "startCommand": "docker compose -f docker-compose.base44.yml up -d",
+  "secrets": [
+    { "name": "SUPABASE_URL", "description": "Supabase project URL (Settings > API in your Supabase project)", "requiredAtBoot": false },
+    { "name": "SUPABASE_SERVICE_ROLE_KEY", "description": "Supabase service role key (Settings > API) — server-side only", "requiredAtBoot": false },
+    { "name": "SUPABASE_ANON_KEY", "description": "Supabase anon key (Settings > API) — used by the frontend client", "requiredAtBoot": false },
+    { "name": "STRIPE_SECRET_KEY", "description": "Stripe secret API key (Developers > API keys)", "requiredAtBoot": false },
+    { "name": "STRIPE_WEBHOOK_SECRET", "description": "Stripe webhook signing secret for the billing webhook endpoint", "requiredAtBoot": false },
+    { "name": "STRIPE_PRICE_ID_CREATOR", "description": "Stripe recurring Price ID for the Creator plan ($9.99/mo)", "requiredAtBoot": false },
+    { "name": "STRIPE_PRICE_ID_PRO", "description": "Stripe recurring Price ID for the Pro plan ($19.99/mo)", "requiredAtBoot": false },
+    { "name": "TRANSCRIPTION_API_KEY", "description": "API key for the speech-to-text provider (mocked until set)", "requiredAtBoot": false },
+    { "name": "VIDEO_PROCESSING_API_KEY", "description": "API key for the video rendering provider (mocked until set)", "requiredAtBoot": false },
+    { "name": "VITE_SUPABASE_URL", "description": "Supabase project URL exposed to the frontend (VITE_ prefix)", "requiredAtBoot": false },
+    { "name": "VITE_SUPABASE_ANON_KEY", "description": "Supabase anon key exposed to the frontend (VITE_ prefix)", "requiredAtBoot": false }
+  ]
+}
